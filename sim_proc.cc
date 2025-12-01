@@ -4,6 +4,8 @@
 #include <inttypes.h>
 #include "sim_proc.h"
 
+#include "rmt.cc"
+
 /*  argc holds the number of command line arguments
     argv[] holds the commands themselves
 
@@ -46,6 +48,11 @@ int main (int argc, char* argv[])
         exit(EXIT_FAILURE);
     }
     
+    //creating rmt table
+    rmt rmt_table;
+    rmt_table.rmt_initialize();
+    
+
     ///////////////////////////////////////////////////////////////////////////////////////////////////////
     //
     // The following loop just tests reading the trace and echoing it back to the screen.
@@ -55,8 +62,8 @@ int main (int argc, char* argv[])
     // inside the Fetch() function.
     //
     ///////////////////////////////////////////////////////////////////////////////////////////////////////
-    while(fscanf(FP, "%lx %d %d %d %d", &pc, &op_type, &dest, &src1, &src2) != EOF)
-        printf("%lx %d %d %d %d\n", pc, op_type, dest, src1, src2); //Print to check if inputs have been read correctly
+    // while(fscanf(FP, "%lx %d %d %d %d", &pc, &op_type, &dest, &src1, &src2) != EOF)
+    //     printf("%lx %d %d %d %d\n", pc, op_type, dest, src1, src2); //Print to check if inputs have been read correctly
 
     return 0;
 }
