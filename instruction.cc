@@ -233,16 +233,16 @@ unsigned int instruction::get_cycles_in_current_stage()
 		case RENAME:
 			cycles = cyc_in_rename;
 			break;
-		case REGREAD:
+		case REG_READ:
 			cycles = cyc_in_register_read;
 			break;
-		case ISSQUE:
+		case ISSUE_QUEUE:
 			cycles = cyc_in_issue_queue;
 			break;
-		case EXEC:
+		case EXECUTE:
 			cycles = cyc_in_exec;
 			break;
-		case WRTBACK:
+		case WRITE_BACK:
 			cycles = cyc_in_writeback;
 			break;
 		case RETIRE:
@@ -273,16 +273,16 @@ void instruction::set_cycles_in_current_stage(unsigned int cycles)
 		case RENAME:
 			cyc_in_rename = cycles;
 			break;
-		case REGREAD:
+		case REG_READ:
 			cyc_in_register_read = cycles;
 			break;
-		case ISSQUE:
+		case ISSUE_QUEUE:
 			cyc_in_issue_queue = cycles;
 			break;
-		case EXEC:
+		case EXECUTE:
 			cyc_in_exec = cycles;
 			break;
-		case WRTBACK:
+		case WRITE_BACK:
 			cyc_in_writeback = cycles;
 			break;
 		case RETIRE:
@@ -331,16 +331,16 @@ void instruction::incr_cycles_for_current_stage()
 		case RENAME:
 			cyc_in_rename++;
 			break;
-		case REGREAD:
+		case REG_READ:
 			cyc_in_register_read++;
 			break;
-		case ISSQUE:
+		case ISSUE_QUEUE:
 			cyc_in_issue_queue++;
 			break;
-		case EXEC:
+		case EXECUTE:
 			cyc_in_exec++;
 			break;
-		case WRTBACK:
+		case WRITE_BACK:
 			cyc_in_writeback++;
 			break;
 		case RETIRE:
