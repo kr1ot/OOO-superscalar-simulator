@@ -189,22 +189,7 @@ void rename(pipeline_data *meta, proc_params* param, vector<instruction>& instru
 							//get the pc 
 							unsigned long pc = instructions_in_pipeline[i].get_pc();
 							unsigned int sequence = instructions_in_pipeline[i].get_sequence();
-							//allocate the rob entry with the necessary metadata
-							//get the rob tag for this entry
-							//this also updates dst with -1 (when no dst is specified)
-							unsigned int rob_tag = rob->allocate_rob_entry(pc, dst, sequence);
-							//store the rob tag associated with this instruction
-							//useful for subsequent stages
-							instructions_in_pipeline[i].set_rob_entry(rob_tag);
-							//store the rob entry in the rmt only  if dst register is available
-							//if not available, then the rmt does not contain that rob entry
-							if(dst != -1)
-							{
-								//store the rob entry in rmt indexed via dst reg 
-								//also set the valid bit to indicate it is stored in rob
-								rmt->set_rob_tag(dst, rob_tag);
-								rmt->set_valid_bit(dst);
-							}
+							
 							//check only if src have registers associated otherwise store them as
 							//"-1" in the rob as well
 							if(src1 != -1)
@@ -237,6 +222,23 @@ void rename(pipeline_data *meta, proc_params* param, vector<instruction>& instru
 							{
 								instructions_in_pipeline[i].set_src2_rob(-1);
 							}
+							//allocate the rob entry with the necessary metadata
+							//get the rob tag for this entry
+							//this also updates dst with -1 (when no dst is specified)
+							unsigned int rob_tag = rob->allocate_rob_entry(pc, dst, sequence);
+							//store the rob tag associated with this instruction
+							//useful for subsequent stages
+							instructions_in_pipeline[i].set_rob_entry(rob_tag);
+							//store the rob entry in the rmt only  if dst register is available
+							//if not available, then the rmt does not contain that rob entry
+							if(dst != -1)
+							{
+								//store the rob entry in rmt indexed via dst reg 
+								//also set the valid bit to indicate it is stored in rob
+								rmt->set_rob_tag(dst, rob_tag);
+								rmt->set_valid_bit(dst);
+							}
+							
 							//set stage for the registers to REG_READ for register reads							
 							instructions_in_pipeline[i].set_current_stage(REG_READ);
 							break;
@@ -418,6 +420,255 @@ void regread(pipeline_data *meta, proc_params *param, vector<instruction>& instr
 	}
 }
 
+//dispatch stage
+void dispatch(pipeline_data *meta, proc_params *param, vector<instruction>& instructions_in_pipeline, issue_queue *iq)
+{
+	//check for free entries in issue queue
+	//1.if width number of entries are available, dispatch them to issue queue
+	//2. stall if the entries are unavailable
+	//also ensure the ready is caught from bypass 
+	if(instructions_in_pipeline.size() != 0)
+	{
+		//issue queue has width number of instructions
+		if(iq->check_for_width_free_entries() == true) 
+		{
+			meta->dispatch_busy = false;
+			for(int j = 0; j < (int) param->width; j++)
+			{
+				for(int i = 0; i < (int) instructions_in_pipeline.size(); i++)
+				{
+					//look for all those instructions that are currently in dispatch state
+					if(instructions_in_pipeline[i].get_current_stage() == DISPATCH)
+					{
+						//increment the number of cycles in dispatch state						
+						instructions_in_pipeline[i].incr_cycles_for_current_stage();
+						//get the index of the free entry
+						int free_index = iq->get_free_entry(); 
+						//get the rob entry index
+						int dst = instructions_in_pipeline[i].get_rob_entry();
+						//get the sequence
+						unsigned int sequence = instructions_in_pipeline[i].get_sequence();
+						int rs1;
+						bool rs1_is_in_arf = true;
+						if(instructions_in_pipeline[i].get_src1_rob() != -1)
+						{
+							rs1 = instructions_in_pipeline[i].get_src1_rob();
+							rs1_is_in_arf = false;
+						}
+						else
+							rs1 = instructions_in_pipeline[i].get_src1();
+
+						int rs2;
+						bool rs2_is_in_arf = true;
+						if(instructions_in_pipeline[i].get_src2_rob() != -1)
+						{
+							rs2 = instructions_in_pipeline[i].get_src2_rob();
+							rs2_is_in_arf = false;
+						}
+						else
+							rs2 = instructions_in_pipeline[i].get_src2();
+
+						//push the entry onto the issue queue
+						iq->set_iq_entry(dst, rs1, rs2, sequence, free_index, rs1_is_in_arf, rs2_is_in_arf);
+
+						//looking at global wakeups and making instruction ready if it matches
+						if(instructions_in_pipeline[i].get_src1_rob() != -1)
+						{
+							rs1 = instructions_in_pipeline[i].get_src1_rob();
+							
+							for(int k = 0; k < (int) meta->rob_destinations_ready_this_cycle.size(); k++)
+							{
+								if(rs1 == meta->rob_destinations_ready_this_cycle[k])
+								{
+									instructions_in_pipeline[i].set_src1_rob_rdy();
+									iq->make_src1_rdy(free_index);
+								}
+							}
+						}
+						if(instructions_in_pipeline[i].get_src2_rob() != -1)
+						{
+							rs2 = instructions_in_pipeline[i].get_src2_rob();
+							for(int k = 0; k < (int) meta->rob_destinations_ready_this_cycle.size(); k++)
+							{
+								if(rs2 == meta->rob_destinations_ready_this_cycle[k])
+								{
+									instructions_in_pipeline[i].set_src2_rob_rdy();
+									iq->make_src2_rdy(free_index);
+								}
+							}
+						}
+						//if ROB has the ready value, make sure to make it
+						//ready in the instruction queue
+						if(instructions_in_pipeline[i].get_src1_rob_rdy() == true)
+						{
+							iq->make_src1_rdy(free_index);
+						}
+
+						if(instructions_in_pipeline[i].get_src2_rob_rdy() == true)
+						{
+							//cout << "rs2: " << rs1 << " is ready" << endl;
+							iq->make_src2_rdy(free_index);
+						}
+
+						
+						meta->issue_queue_empty = false;
+
+						instructions_in_pipeline[i].set_current_stage(ISSUE_QUEUE);
+						break;
+					}
+				}
+			}
+		}
+		else
+		{
+			bool bundle_exists = false;
+			for(int j = 0; j < (int) param->width; j++)
+			{
+				for(int i = 0; i < (int) instructions_in_pipeline.size(); i++)
+				{
+					if(instructions_in_pipeline[i].get_current_stage() == DISPATCH && (int) instructions_in_pipeline[i].get_super_slot() == j+1)
+					{
+						bundle_exists = true;
+						instructions_in_pipeline[i].set_current_stage(DISPATCH);
+						
+						int rs1;
+						if(instructions_in_pipeline[i].get_src1_rob() != -1)
+						{
+							rs1 = instructions_in_pipeline[i].get_src1_rob();
+						}
+						else
+							rs1 = instructions_in_pipeline[i].get_src1();
+
+						int rs2;
+						if(instructions_in_pipeline[i].get_src2_rob() != -1)
+						{
+							rs2 = instructions_in_pipeline[i].get_src2_rob();
+						}
+						else
+							rs2 = instructions_in_pipeline[i].get_src2();
+
+						
+						if(instructions_in_pipeline[i].get_src1_rob() != -1)
+						{
+							rs1 = instructions_in_pipeline[i].get_src1_rob();
+							for(int k = 0; k < (int) meta->rob_destinations_ready_this_cycle.size(); k++)
+							{
+								if(rs1 == meta->rob_destinations_ready_this_cycle[k])
+								{
+									instructions_in_pipeline[i].set_src1_rob_rdy();
+								}
+							}
+						}
+						if(instructions_in_pipeline[i].get_src2_rob() != -1)
+						{
+							rs2 = instructions_in_pipeline[i].get_src2_rob();
+							for(int k = 0; k < (int) meta->rob_destinations_ready_this_cycle.size(); k++)
+							{
+								if(rs2 == meta->rob_destinations_ready_this_cycle[k])
+								{
+									instructions_in_pipeline[i].set_src2_rob_rdy();
+								}
+							}
+						}
+
+						
+						meta->issue_queue_empty = false;
+					}
+				}
+			}
+			//if there are not enough entries
+			//increment cycles for instructions in dispatch
+			incr_cycles_in_current_stage_due_to_stall(DISPATCH, instructions_in_pipeline);
+
+			if(bundle_exists == true)
+				meta->dispatch_busy = true;
+			else if(bundle_exists == false)
+				meta->dispatch_busy = false;
+		}
+	}
+	else
+	{
+		meta->dispatch_busy = false;
+	}
+}
+
+//issue stage
+void issue(pipeline_data *meta, proc_params *param, vector<instruction>& instructions_in_pipeline, issue_queue *iq, rob *rob)
+{
+	//issue the ready instructions to execute stage
+	if(instructions_in_pipeline.size() != 0)
+	{
+		//check if issue queue has any valid entry
+		if(iq->has_valid_entries() == true)
+		{
+			//run through width number of instructions
+			for(int i = 0; i < (int) param->width; i++)
+			{
+				//get the oldest instruction for issue to execute stage
+				int oldest_instr_idx = iq->find_oldest_ready_instr();
+				if(oldest_instr_idx != -1)
+				{
+					unsigned int sequence = iq->get_sequence(oldest_instr_idx);
+					unsigned int cyc_of_instr_being_issued = iq->get_cyc(oldest_instr_idx);
+					for(int j = 0; j < (int) instructions_in_pipeline.size(); j++)
+					{
+						if(instructions_in_pipeline[j].get_sequence() == sequence)
+						{
+							instructions_in_pipeline[j].set_cycles_in_current_stage(cyc_of_instr_being_issued);
+							instructions_in_pipeline[j].set_current_stage(EXECUTE);
+							//increment cycles for execute
+							instructions_in_pipeline[j].incr_cycles_for_current_stage();
+						}
+					}
+					iq->clear_cyc(oldest_instr_idx);
+					iq->free_up_entry(oldest_instr_idx);
+				}
+			}
+			iq->incr_cyc_for_all_valid_entries();
+		}
+		else
+		{
+			meta->issue_queue_full = false;
+		}
+	}
+	//initial simulation
+	else
+	{
+		meta->issue_queue_full = false;
+	}
+}
+
+void execute(pipeline_data *meta, proc_params *param, vector<instruction>& instructions_in_pipeline, rob *rob, issue_queue *iq)
+{
+	if(instructions_in_pipeline.size() != 0)
+	{
+		for(int j = 0; j < (int) instructions_in_pipeline.size(); j++)
+		{
+			if(instructions_in_pipeline[j].get_current_stage() == EXECUTE)
+			{
+
+				if(instructions_in_pipeline[j].get_cycles_in_current_stage() == instructions_in_pipeline[j].get_execution_latency())
+				{
+					
+					instructions_in_pipeline[j].set_current_stage(WRITE_BACK);
+					
+					int dst_in_rob = instructions_in_pipeline[j].get_rob_entry();
+					meta->rob_destinations_ready_this_cycle.push_back(dst_in_rob);			
+					iq->make_entries_ready_with_src_as(dst_in_rob);
+				}
+				else
+				{
+					instructions_in_pipeline[j].incr_cycles_for_current_stage();
+				}
+			}
+		}
+	}
+	else
+	{
+		meta->issue_queue_empty = true;
+	}
+}
+
 //writeback stage is used to send bypass values to IQ and also update the ready bit in the rob
 void writeback(pipeline_data *meta, vector<instruction>& instructions_in_pipeline, rob *rob)
 {
@@ -474,7 +725,6 @@ void retire(pipeline_data *meta, proc_params *param, rob *rob, vector<instructio
 	//   -> reset the rmt entries if rob index matches the rmt entry
 	//get head and tail
 	unsigned int head = rob->get_head();
-	unsigned int tail = rob->get_tail();
 	//when there are instructions in the pipeline
 	if(instructions_in_pipeline.size() != 0)
 	{
@@ -545,6 +795,4 @@ void retire(pipeline_data *meta, proc_params *param, rob *rob, vector<instructio
 		//instructions are yet to be sent to peipeline
 		meta->is_simulation_done = false;
 	}
-
 }
-
