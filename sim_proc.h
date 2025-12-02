@@ -14,11 +14,11 @@ enum {
 	FETCH = 1,
 	DECODE = 2,
 	RENAME = 3,
-	REGREAD = 4,
+	REG_READ = 4,
 	DISPATCH = 5,
-	ISSQUE = 6,
-	EXEC = 7,
-	WRTBACK = 8,
+	ISSUE_QUEUE = 6,
+	EXECUTE = 7,
+	WRITE_BACK = 8,
 	RETIRE = 9
 };
 

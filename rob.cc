@@ -106,7 +106,7 @@ class rob
         void rob_initialize(unsigned int rob_size, unsigned int width);
 
         //make the rob entry ready. used by WB stage
-        void rob_entry_ready(int rob_tag){
+        void set_rob_entry_ready(int rob_tag){
             rob[rob_tag].set_ready_bit();
         }
 

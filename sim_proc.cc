@@ -4,7 +4,11 @@
 #include <inttypes.h>
 #include "sim_proc.h"
 
+#include "instruction.cc"
 #include "rmt.cc"
+#include "issue_queue.cc"
+#include "rob.cc"
+
 
 /*  argc holds the number of command line arguments
     argv[] holds the commands themselves
@@ -51,7 +55,7 @@ int main (int argc, char* argv[])
     //creating rmt table
     rmt rmt_table;
     rmt_table.rmt_initialize();
-    
+
 
     ///////////////////////////////////////////////////////////////////////////////////////////////////////
     //
